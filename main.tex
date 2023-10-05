@@ -1,0 +1,230 @@
+\documentclass[hyperref={colorlinks=true,linkcolor=blue}, aspectratio=169]{beamer}
+
+\usepackage{animate}
+
+\usepackage{booktabs}
+\setbeamertemplate{caption}[numbered]
+\setbeamertemplate{footline}[frame number]
+\setbeamertemplate{navigation symbols}{}
+
+\usepackage{amsmath}
+\newcommand*{\norm}[1]{\left\lVert#1\right\rVert}
+\newcommand{\argmin}{\arg\!\min}
+
+\usepackage{color,soul}
+\usepackage{colortbl}
+
+\setbeamerfont{footnote}{size=\tiny}
+
+\usepackage{listings,lstautogobble}
+\lstset{language=Python,
+	basicstyle=\scriptsize\ttfamily,
+	commentstyle=\ttfamily\itshape\color{gray},
+	showstringspaces=false,
+	autogobble=true
+}
+
+\usepackage{caption}
+\captionsetup{justification=centering,margin=1cm}
+\usepackage{subcaption}
+
+\usepackage{multirow}
+
+\usepackage{siunitx}
+\usepackage{tikz}
+\tikzstyle{process} = [rectangle, minimum width=3cm, minimum height=1cm, text centered, draw=black, fill=orange!30]
+\usetikzlibrary{shapes,positioning}
+\usepackage{ulem}
+
+\AtBeginSection[]{
+	\begin{frame}
+		\vfill
+		\centering
+		\begin{beamercolorbox}[sep=8pt,center,shadow=true,rounded=true]{title}
+			\usebeamerfont{title}\insertsectionhead\par%
+		\end{beamercolorbox}
+		\vfill
+	\end{frame}
+}
+
+\addtobeamertemplate{footnote}{\hskip -2em}{}
+
+\usepackage[capitalise,noabbrev]{cleveref}
+\usepackage[numbers,sort&compress]{natbib}
+\bibliographystyle{unsrt}
+
+\setbeamercolor{block title}{fg=black,bg=yellow}
+
+\title{On the use of autoencoder to denoise diffusion MRI}
+\author[Z Tan]{Soundarya Soundarresan \inst{1}, \underline{Zhengguo Tan} \inst{1}, Patrick A Liebig \inst{2}, \\ Robin M Heidemann \inst{2}, Frederik B Laun \inst{3}, Florian Knoll \inst{1}}
+\institute{\inst{1} Artificial Intelligence in Biomedical Engineering, University of Erlangen-Nuremberg, Erlangen, Germany \\
+	\inst{2} Siemens AG, Erlangen, Germany \\
+	\inst{3} Institute of Radiology, University Hospital Erlangen, Erlangen, Germany}
+\date{05 October 2023}
+
+\begin{document}
+	
+	\frame{\titlepage}
+	
+	% ================= %
+	\section{Motivation: In vivo High Resolution Diffusion MRI at 7~T}
+	
+	\begin{frame}{Various clinical applications of diffusion MRI 
+			\footnote{Courtesy: ChatGPT}$^,$
+			\footnote{\url{https://mriquestions.com/trace-vs-adc-map.html}}$^,$ \footnote{\url{https://www.psychologytoday.com/gb/blog/adventures-in-cognition/202102/why-white-matter-matters-diffusion-tensor-imaging}}$^,$
+			\footnote{\url{https://rad.bwh.harvard.edu/prostate-mri/}}}
+		\begin{columns}
+			\begin{column}{0.5\textwidth}
+				Brain: stroke \& neurodegenerative diseases 
+				
+				\vspace{1em}
+				
+				\includegraphics[height=0.28\textheight]{figures/diffusion.png}
+				
+				
+			\end{column}
+			\vline
+			\hspace{0.1em}
+			\begin{column}{0.5\textwidth}
+				Prostate cancer: detection and localization 
+				
+				\vspace{1em}
+				
+				\includegraphics[height=0.28\textheight]{figures/PI_RAD.png}
+			\end{column}
+		\end{columns}
+
+	\end{frame}
+
+	\begin{frame}{Limitations in diffusion MRI \footnote{Le Bihan D, et al. Artifacts and pitfalls in diffusion MRI. \textit{J Magn Reson Imaging} (2006).}}
+		\begin{columns}
+			\begin{column}{0.6\textwidth}
+				\begin{itemize}
+					\item Common pitfalls:
+					\begin{itemize}
+						\item [$\star$] motion artifacts
+						\item [$\star$] eddy currents
+						\item [$\star$] geometric distortion and susceptibility artifacts
+					\end{itemize}
+					\vspace{2em}
+					\item Be aware that diffusion-weighted imaging (DWI),
+					\begin{itemize}
+						\item [$\star$] primarily uses single-shot echo planar imaging (EPI)
+						\item [$\star$] clinical spatial resolution of about \SI{2}{mm}
+						\item [$\star$] suffers from low signal-to-noise ratio (SNR)
+					\end{itemize}
+				\end{itemize}
+			\end{column}
+
+			\begin{column}{0.4\textwidth}
+				\includegraphics[height=0.8\textheight]{figures/diffusion_pitfalls.png}
+			\end{column}
+		\end{columns}
+
+	\end{frame}
+
+	% ================= %
+	\section{Method}
+
+	\begin{frame}{Diffusion MRI Acquisition}
+		\begin{figure}
+			\centering
+			\includegraphics[width=0.7\textwidth]{figures/diffusion_sampling.png}
+		\end{figure}
+
+		\begin{itemize}
+			\item <1-> 2-shot interleaved EPI with multi-band factor 2, yielding acceleration factor $6 \times 2$
+			\item <2-> $k_y$-shift encoding to accomplish complementary $k$-$q$-space sampling
+			\item <3-> \SI{1.2}{mm} (isotropic), $2 \times b_0$ + 30 diffusion encodings with $b$-value \SI{1000}{\second\per\square\mm}
+		\end{itemize}
+	\end{frame}
+
+	\begin{frame}{Diffusion MRI Forward Modeling and Image Reconstruction \footnote{Tan Z, et al. \textit{under review}}}
+		\begin{figure}
+			\centering
+			\includegraphics[width=\textwidth]{figures/fwd.pdf}
+		\end{figure}
+	\end{frame}
+
+	\begin{frame}{Denoise Diffusion MRI Using Autoencoder \footnote{Hinton GE, Salakhutdinov RR. Reducing the dimensionality of data with neural networks. \textit{Science} (2006).}$^,$
+		\footnote{Lam F, et al. Constrained magnetic resonance spectroscopic imaging by learning nonlinear low-dimensional models. \textit{IEEE Trans Med Imaging} (2019).}$^,$
+		\footnote{Mani M, et al. qModeL: A plug-and-play model-based reconstruction for highly accelerated multi-shot diffusion MRI using learned priors. \textit{Magn Reson Med} (2021).}}
+		\begin{figure}
+			\centering
+			\includegraphics[width=0.8\textwidth]{figures/dae.pdf}
+		\end{figure}
+	\end{frame}
+
+	\begin{frame}{Denoise Diffusion MRI Using Autoencoder: How to Train the Model}
+		\begin{itemize}
+			\item Data generation:
+
+			\begin{enumerate}
+				\item Simulation of DWI signal based on the DTI model \footnote{Basser PJ, et al. MR diffusion tensor spectroscopy and imaging. \textit{Biophys J} (1994).}
+				\item Each tensor element contains 10 entries, resulting in $10^6$ DWI signal entries
+				\item Zero-mean Gaussian-distribution noise with 10 varying standard deviations are added to the simulated signal, yielding $10^7$ DWI signal
+				\item \SI{80}{\percent} of the data for training, and \SI{20}{\percent} for testing
+			\end{enumerate}
+			\vspace{1em}
+			\item Training setup:
+			\begin{enumerate}
+				\item Optimizer: ADAM \footnote{Kingma DP, et al. Adam: A Method For Stochastic Optimization. \textit{ICLR} (2015).}
+				\item Learning rate: 0.0001
+				\item Epochs: 800
+				\item 4 fully-connected encoder/decoder layers with ReLU, whereas the output layer uses Sigmoid as the activation function
+				\item Latent size: 10
+			\end{enumerate}
+		\end{itemize}
+	\end{frame}
+	
+	% ================= %
+	\section{Results}
+
+	\begin{frame}{Comparison with the Linear Subspace Method}
+		\begin{figure}
+			\includegraphics[height=0.8\textheight]{figures/SVD_DAE.png}
+		\end{figure}
+	\end{frame}
+
+	\begin{frame}{In vivo DWI Denoising}
+		\begin{figure}
+			\includegraphics[width=0.7\textwidth]{figures/MUSE_train_DAE_Latent10_Depth04_epoch0100_dwi.png}
+		\end{figure}
+	\end{frame}
+
+	\begin{frame}{In vivo DWI Denoising: Learned Latent Signal}
+		\begin{figure}
+			\includegraphics[width=\textwidth]{figures/MUSE_train_DAE_Latent10_Depth04_epoch0100_latent.png}
+		\end{figure}
+	\end{frame}
+
+	% ================= %
+	\section{Conclusion}
+	
+	\begin{frame}{Conclusion}
+		\begin{columns}
+			\begin{column}{0.5\textwidth}
+				\begin{itemize}
+					\item Multi-shot EPI:
+					\begin{itemize}
+						\item [$\star$] enables high spatial resolution DWI
+					\end{itemize}
+					\vspace{1em}
+					\item we open source our DWI reconstruction techniques $\rightarrow$
+					\vspace{1em}
+					\item Autoencoder:
+					\begin{itemize}
+						\item [$\star$] enables DWI denoising
+						\item [$\star$] learns a nonlinear subspace 
+					\end{itemize}
+				\end{itemize}
+			\end{column}
+			
+			\begin{column}{0.5\textwidth}
+				\includegraphics[width=\columnwidth]{figures/github_jets.png}
+			\end{column}
+		\end{columns}
+		
+	\end{frame}
+	
+\end{document}
